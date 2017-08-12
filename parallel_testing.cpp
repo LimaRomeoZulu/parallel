@@ -67,28 +67,11 @@ int main(int argc, char** argv)
 	std::stringstream(argv[2]) >> nthreads;
 	
 	std::vector<std::vector<int>> results(nthreads);
-	
-   // Read the file
-   // std::ifstream ifs(argv[1] , std::ios::in);
-	//size_t line_count = std::count(std::istreambuf_iterator<char>(ifs), std::istreambuf_iterator<char>(), '\n');
-	//std::cout << "Number of elements: " << line_count << std::endl;
-	
-//	ifs.seekg(0);
-	std::string line;
-	int number;
     int nlines = 0;
-    std::vector<int> numbers;
-	
-	while(ifs >> line){
-		std::stringstream(line) >> number;
-		numbers.push_back(number);
-		nlines = nlines + 1 ;
-	}
-    ifs.close();
 	
 	// Prepare outputfile
-	std::ofstream outputfile;
-	std::ofstream measures;
+	//std::ofstream outputfile;
+	//std::ofstream measures;
 	std::vector<size_t> final_result(nlines);
 	
 	int option;
@@ -184,11 +167,11 @@ int main(int argc, char** argv)
 	}
 	//}//end for loop for measures
 	std::cout << "Finished calculation" << std::endl;
-	for(it = final_result.begin(); it < final_result.end(); it++)
-	{
-	outputfile << *it << std::endl;
-	}
-	outputfile.close();
+	//for(it = final_result.begin(); it < final_result.end(); it++)
+	//{
+	//outputfile << *it << std::endl;
+	//}
+	//outputfile.close();
 	//measures.close();
 	return 0;
 }

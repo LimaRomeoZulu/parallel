@@ -133,10 +133,10 @@ public:
     }
 
     //! Push another item (only callable during input state).
-    void push(const value_type& val)
+    void push(const value_type& val, int num_thread)
     {
         assert(m_state == STATE_INPUT);
-        m_runs_creator.parallel_push(val,1);
+        m_runs_creator.parallel_push(val, num_thread);
     }
 	
     void push_bulk(const std::vector<value_type>& val)

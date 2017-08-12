@@ -26,12 +26,14 @@ struct my_comparator1
 template<typename CINT>
 class SynchronSorter {
 public:
-	SynchronSorter(int nthread):quartetSorter(my_comparator1<CINT>(),static_cast<size_t>(1)<<30, nthread){};
+	SynchronSorter(int num_thread):quartetSorter(my_comparator1<CINT>(),static_cast<size_t>(1)<<30, num_thread){
+		nthread = num_thread;
+	};
 	std::vector<CINT> computeSorting();
 private:
 	stxxl::parallel_sorter_synchron<CINT, my_comparator1<CINT> > quartetSorter;
 	std::vector<CINT> result;
-
+	int nthread;
 };
 
 template<typename CINT>
@@ -40,11 +42,12 @@ std::vector<CINT> SynchronSorter<CINT>::computeSorting() {
 	std::vector<CINT> result;
 	
 	std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
-	#pragma omp parallel num_threads(nthreads) for
+	#pragma omp parallel num_threads(nthread)
 	{		
-		for(size_t i = static_cast<size_t>(1)<<28; i>0; i--)
+		#pragma omp for 
+		for(size_t i = static_cast<size_t>(1)<<25; i>0; i--)
 		{
-			quartetSorter.push(i);
+			quartetSorter.push(i, omp_get_thread_num());
 		}
 	}		
 	std::chrono::steady_clock::time_point insert = std::chrono::steady_clock::now();
