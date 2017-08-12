@@ -56,7 +56,7 @@ std::vector<int> merge_runs(std::vector<std::vector<int>> results)
 int main(int argc, char** argv)
 {
 	
-	if(argc != 4){
+	if(argc != 3){
 		std::cout << "Please specify the input file and the implemented option to parallize and number of threads. " << std::endl;
 		std::cout << "Options: " << std::endl << "1 Synchron" << std::endl << "2 Asynchron" 
 			<< std::endl << "3 Different Sorter" << std::endl << "4 Non Parallel" << std::endl;
@@ -64,16 +64,16 @@ int main(int argc, char** argv)
 	}
 	
 	int nthreads;
-	std::stringstream(argv[3]) >> nthreads;
+	std::stringstream(argv[2]) >> nthreads;
 	
 	std::vector<std::vector<int>> results(nthreads);
 	
    // Read the file
-    std::ifstream ifs(argv[1] , std::ios::in);
+   // std::ifstream ifs(argv[1] , std::ios::in);
 	//size_t line_count = std::count(std::istreambuf_iterator<char>(ifs), std::istreambuf_iterator<char>(), '\n');
 	//std::cout << "Number of elements: " << line_count << std::endl;
 	
-	ifs.seekg(0);
+//	ifs.seekg(0);
 	std::string line;
 	int number;
     int nlines = 0;
@@ -92,7 +92,7 @@ int main(int argc, char** argv)
 	std::vector<size_t> final_result(nlines);
 	
 	int option;
-	std::stringstream(argv[2]) >> option;
+	std::stringstream(argv[1]) >> option;
 	std::vector<size_t>::const_iterator it;
 	//measures.open("../0_measures_big.csv", std::ios_base::app);
 	
@@ -105,7 +105,7 @@ int main(int argc, char** argv)
 			outputfile.open("../1_result_parallel_testing.txt");
 			
 			std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
-			SynchronSorter<size_t> s;
+			SynchronSorter<size_t> s(nthreads);
 			final_result = s.computeSorting();
 			
 			std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
@@ -184,10 +184,10 @@ int main(int argc, char** argv)
 	}
 	//}//end for loop for measures
 	std::cout << "Finished calculation" << std::endl;
-	//for(it = final_result.begin(); it < final_result.end(); it++)
-	//{
-		//outputfile << *it << std::endl;
-	//}
+	for(it = final_result.begin(); it < final_result.end(); it++)
+	{
+	outputfile << *it << std::endl;
+	}
 	outputfile.close();
 	//measures.close();
 	return 0;
