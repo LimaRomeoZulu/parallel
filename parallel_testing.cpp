@@ -14,8 +14,8 @@
 
 //#include "4_NonParallelSorter.hpp"
 //#include "3_DifferentSorter.hpp"
-#include "2_Asynchron.hpp"
-//#include "1_Synchron.hpp"
+//#include "2_Asynchron.hpp"
+#include "1_Synchron.hpp"
 #include <limits>
 #include <iostream>
 #include <fstream>
@@ -89,11 +89,11 @@ int main(int argc, char** argv)
 	// Prepare outputfile
 	std::ofstream outputfile;
 	std::ofstream measures;
-	std::vector<int> final_result(nlines);
+	std::vector<size_t> final_result(nlines);
 	
 	int option;
 	std::stringstream(argv[2]) >> option;
-	std::vector<int>::const_iterator it;
+	std::vector<size_t>::const_iterator it;
 	//measures.open("../0_measures_big.csv", std::ios_base::app);
 	
 	//for(int i = 0; i < 20; i++)
@@ -105,8 +105,8 @@ int main(int argc, char** argv)
 			outputfile.open("../1_result_parallel_testing.txt");
 			
 			std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
-			//SynchronSorter<int> s;
-			//final_result = s.computeSorting(numbers);
+			SynchronSorter<size_t> s;
+			final_result = s.computeSorting();
 			
 			std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
 			
@@ -119,8 +119,8 @@ int main(int argc, char** argv)
 			outputfile.open("../2_result_parallel_testing.txt");
 			
 			std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
-			AsynchronSorter<int> as;
-			final_result = as.computeSorting(numbers, nthreads);
+			//AsynchronSorter<int> as;
+			//final_result = as.computeSorting(numbers, nthreads);
 			//std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
 			
 			//measures << "2," << nthreads << "," << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() << std::endl;
@@ -161,7 +161,7 @@ int main(int argc, char** argv)
 			
 			//measures << "3," << nthreads << "," << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() << std::endl;
 			
-			final_result = merge_runs(results);
+			//final_result = merge_runs(results);
 			
 			break;
 		}
@@ -184,10 +184,10 @@ int main(int argc, char** argv)
 	}
 	//}//end for loop for measures
 	std::cout << "Finished calculation" << std::endl;
-	for(it = final_result.begin(); it < final_result.end(); it++)
-	{
-		outputfile << *it << std::endl;
-	}
+	//for(it = final_result.begin(); it < final_result.end(); it++)
+	//{
+		//outputfile << *it << std::endl;
+	//}
 	outputfile.close();
 	//measures.close();
 	return 0;

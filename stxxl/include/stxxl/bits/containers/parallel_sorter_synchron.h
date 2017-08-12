@@ -103,16 +103,16 @@ public:
     //! \{
 
     //! Constructor allocation memory_to_use bytes in ram for sorted runs.
-    parallel_sorter_synchron(const cmp_type& cmp, unsigned_type memory_to_use)
+    parallel_sorter_synchron(const cmp_type& cmp, unsigned_type memory_to_use, int num_threads)
         : m_state(STATE_INPUT),
-          m_runs_creator(cmp, memory_to_use),
+          m_runs_creator(cmp, memory_to_use, num_threads),
           m_runs_merger(cmp, memory_to_use)
     { }
 
     //! Constructor variant with differently sizes runs_creator and runs_merger
-    parallel_sorter_synchron(const cmp_type& cmp, unsigned_type creator_memory_to_use, unsigned_type merger_memory_to_use)
+    parallel_sorter_synchron(const cmp_type& cmp, unsigned_type creator_memory_to_use, unsigned_type merger_memory_to_use, int num_threads)
         : m_state(STATE_INPUT),
-          m_runs_creator(cmp, creator_memory_to_use),
+          m_runs_creator(cmp, creator_memory_to_use, num_threads),
           m_runs_merger(cmp, merger_memory_to_use)
 
     { }
@@ -135,9 +135,8 @@ public:
     //! Push another item (only callable during input state).
     void push(const value_type& val)
     {
-		std::cout << "parallel_sorter_synchron" << std::endl;
         assert(m_state == STATE_INPUT);
-        m_runs_creator.push(val);
+        m_runs_creator.parallel_push(val,1);
     }
 	
     void push_bulk(const std::vector<value_type>& val)

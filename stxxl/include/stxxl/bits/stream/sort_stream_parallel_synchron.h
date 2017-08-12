@@ -13,8 +13,8 @@
  *  http://www.boost.org/LICENSE_1_0.txt)
  **************************************************************************/
 
-#ifndef STXXL_STREAM_SORT_STREAM_PARALLEL_SYNCHRON_HEADER
-#define STXXL_STREAM_SORT_STREAM_PARALLEL_SYNCHRON_HEADER
+#ifndef STXXL_STREAM_SORT_STREAM_PARALLEL_ASYNCHRON_HEADER
+#define STXXL_STREAM_SORT_STREAM_PARALLEL_ASYNCHRON_HEADER
 
 #include <stxxl/bits/config.h>
 #include <stxxl/bits/stream/stream.h>
@@ -26,6 +26,13 @@
 #include <stxxl/bits/algo/losertree.h>
 #include <stxxl/bits/stream/sorted_runs.h>
 #include <tuple>
+#include <chrono>
+#include <queue>
+#include <mutex>
+#include <condition_variable>
+#include <thread>
+#include <algorithm>
+#include <atomic>  
 
 STXXL_BEGIN_NAMESPACE
 
@@ -451,15 +458,21 @@ private:
 
     //! true after the result() method was called for the first time
     bool m_result_computed;
-	
-    //! true after the result() method was called for the first time
-    bool push_bulk_used;
 
     //! total number of elements in a run
     const unsigned_type m_el_in_run;
+	
+    //! total number of elements in a block of a thread
+    unsigned_type m_el_in_block;
 
     //! current number of elements in the run m_blocks1
-    internal_size_type m_cur_el;
+    std::atomic<internal_size_type> m_cur_el;
+	
+    //! summs up the number of threads written to the run. Finall check to evaluate if run can be written to memory
+    std::atomic<internal_size_type> m_max_el;
+	
+    //! current number of elements each thread can push in multiple blocks
+    std::vector<internal_size_type> block_cur_el;
 
     //! accumulation buffer of size m_m2 blocks, half the available memory size
     block_type* m_blocks1;
@@ -473,6 +486,16 @@ private:
 
     //! run object containing block ids of the run being written to disk
     run_type run;
+	
+	std::chrono::steady_clock::time_point end_writing;
+	
+	
+	std::vector<block_type*> blocks_per_thread;
+	
+	int num_blocks;
+	
+	int num_threads;
+	
 
 protected:
     //!  fill the rest of the block with max values
@@ -499,23 +522,32 @@ protected:
                                    m_cmp);
     }
 
-    void compute_result(block_type* m_blocks1, internal_size_type m_cur_el)
+    void compute_result()
     {
-        if (m_cur_el == 0)
+        std::cout << "Compute_results" << std::endl;
+		
+		if (m_cur_el == 0)
             return;
 
-        sort_run(m_blocks1, m_cur_el);
+        for(int i = 1; i <= num_threads; i++)
+		{
+			write_block_to_run(i);
+		}
+		
+		internal_size_type local_m_cur_el = m_cur_el.load();
+		
+		sort_run(m_blocks1, local_m_cur_el);
 
-        if (m_cur_el <= block_type::size && m_result->elements == 0 && !push_bulk_used)
+        if (local_m_cur_el <= block_type::size && m_result->elements == 0)
         {
             // small input, do not flush it on the disk(s)
-            STXXL_VERBOSE1("runs_creator(use_push): Small input optimization, input length: " << m_cur_el);
-            m_result->small_run.assign(m_blocks1[0].begin(), m_blocks1[0].begin() + m_cur_el);
-            m_result->elements = m_cur_el;
+            STXXL_VERBOSE1("runs_creator(use_push): Small input optimization, input length: " << local_m_cur_el);
+            m_result->small_run.assign(m_blocks1[0].begin(), m_blocks1[0].begin() + local_m_cur_el);
+            m_result->elements = local_m_cur_el;
             return;
         }
 
-        const unsigned_type cur_run_size = div_ceil(m_cur_el, block_type::size);         // in blocks
+        const unsigned_type cur_run_size = div_ceil(local_m_cur_el, block_type::size);         // in blocks
         run.resize(cur_run_size);
         block_manager* bm = block_manager::get_instance();
         bm->new_blocks(AllocStr(), make_bid_iterator(run.begin()), make_bid_iterator(run.end()));
@@ -523,7 +555,7 @@ protected:
         disk_queues::get_instance()->set_priority_op(request_queue::WRITE);
 
         // fill the rest of the last block with max values
-        fill_with_max_value(m_blocks1, cur_run_size, m_cur_el);
+        fill_with_max_value(m_blocks1, cur_run_size, local_m_cur_el);
 
         unsigned_type i = 0;
         for ( ; i < cur_run_size; ++i)
@@ -534,7 +566,7 @@ protected:
 
             m_write_reqs[i] = m_blocks1[i].write(run[i].bid);
         }
-        m_result->add_run(run, m_cur_el);
+        m_result->add_run(run, local_m_cur_el);
 
         for (i = 0; i < m_m2; ++i)
         {
@@ -542,16 +574,25 @@ protected:
                 m_write_reqs[i]->wait();
         }
     }
+	
+	void finished_writing()
+	{
+        for (unsigned_type i = 0; i < m_m2; ++i)
+        {
+            if (m_write_reqs[i].get())
+                m_write_reqs[i]->wait();
+        }
+	}
 
 public:
     //! Creates the object.
     //! \param cmp comparator object
     //! \param memory_to_use memory amount that is allowed to used by the sorter in bytes
-    runs_creator(CompareType cmp, unsigned_type memory_to_use)
+    runs_creator(CompareType cmp, unsigned_type memory_to_use,int nthreads, int nblocks = 10)
         : m_cmp(cmp),
           m_memory_to_use(memory_to_use),
           m_memsize(memory_to_use / BlockSize / sort_memory_usage_factor()),
-          m_m2(m_memsize / 2),
+          m_m2((unsigned_type)(floor(m_memsize / 2 / nblocks) * nblocks)),
           m_el_in_run(m_m2 * block_type::size),
           m_blocks1(NULL), m_blocks2(NULL),
           m_write_reqs(NULL)
@@ -564,15 +605,32 @@ public:
         }
         assert(m_m2 > 0);
 
-        allocate(m_blocks1, m_blocks2);
+        allocate();
+		num_threads = nthreads;
+		num_blocks = nblocks;
+		//0 is never used
+		for(int i=0; i <= num_threads; i++)
+		{
+			block_type* tmp_block = new block_type[num_blocks];
+			blocks_per_thread.push_back(tmp_block);
+			block_cur_el.push_back(0);
+
+		}
+		m_cur_el = 0;
+		m_max_el = 0;
+		m_el_in_block = num_blocks * block_type::size;
 		
-		push_bulk_used = false;
+		std::cout << "m_m2/nblocks: " << m_m2 << std::endl;
+		std::cout << "block_type::size: " << block_type::size << std::endl;
+		std::cout << "Blocksize: " << BlockSize << std::endl;
+		std::cout << "m_el_in_run: " << m_el_in_run << std::endl;
+		std::cout << "m_el_in_block: " << m_el_in_block << std::endl;
     }
 
     ~runs_creator()
     {
         m_result_computed = 1;
-        deallocate(m_blocks1, m_blocks2);
+        deallocate();
     }
 
     //! Clear current state and remove all items.
@@ -592,10 +650,9 @@ public:
                 m_write_reqs[i]->cancel();
         }
     }
-
-    //! Allocates input buffers and clears result.
-    std::tuple<block_type*, block_type*> allocate(block_type* m_blocks1, block_type* m_blocks2)
-    {
+	
+	void allocate()
+	{
         if (!m_blocks1)
         {
             m_blocks1 = new block_type[m_m2 * 2];
@@ -603,19 +660,13 @@ public:
 
             m_write_reqs = new request_ptr[m_m2];
         }
-
-        clear();
-		return std::make_tuple(m_blocks1, m_blocks2);
-    }
-	
-	void allocate()
-	{
-		std::tie(m_blocks1, m_blocks2) = allocate(m_blocks1, m_blocks2);
+		clear();
 	}
 
     //! Deallocates input buffers but not the current result.
-    void deallocate(block_type* m_blocks1, block_type* m_blocks2)
+    void deallocate()
     {
+        result();       // finishes result
 
         if (m_blocks1)
         {
@@ -627,28 +678,11 @@ public:
         }
     }
 	
-	void deallocate()
+	void write_to_memory()
 	{
-		result();       // finishes result
-		deallocate(m_blocks1, m_blocks2);
-	}
-
-    //! Adds new element to the sorter.
-    //! \param val value to be added
-    internal_size_type push(const value_type& val, block_type* m_blocks1, block_type* m_blocks2, internal_size_type m_cur_el)
-    {
-        //std::cout << "Inserting push" << std::endl;
-		assert(m_result_computed == false);
-        if (LIKELY(m_cur_el < m_el_in_run))
-        {
-			m_blocks1[m_cur_el / block_type::size][m_cur_el % block_type::size] = val;
-            ++m_cur_el;
-            return m_cur_el;
-        }
-		#pragma omp critical
-		{
-        assert(m_el_in_run == m_cur_el);
-        m_cur_el = 0;
+        assert(m_el_in_run == m_max_el);
+        m_cur_el.store(0);
+		m_max_el.store(0);
 
         // sort and store m_blocks1
         sort_run(m_blocks1, m_el_in_run);
@@ -672,48 +706,69 @@ public:
         m_result->add_run(run, m_el_in_run);
 
         std::swap(m_blocks1, m_blocks2);
-        push(val, m_blocks1, m_blocks2, m_cur_el);
-		}
-		return m_cur_el;
+
     }
 	
-	//Takes an vector of values to be sorted
-	void push_bulk(const std::vector<value_type>& val)
+	void write_block_to_run(int thread_id)
 	{
-		push_bulk_used = true;
-		#pragma omp parallel
+		internal_size_type local_m_cur_el = m_cur_el.fetch_add(block_cur_el[thread_id], std::memory_order_acq_rel);
+		if(local_m_cur_el < m_el_in_run)
 		{
-		    //! current number of elements in the run m_blocks1
-		    internal_size_type m_cur_el = 0;
-
-		    //! accumulation buffer of size m_m2 blocks, half the available memory size
-		    block_type* m_blocks3 = NULL;
-			block_type* m_blocks4 = NULL;
+			std::cout << "local_m_cur_el < m_el_in_run thread: " << thread_id << std::endl;
+			//typename std::vector<std::vector<block_type*>>::const_iterator it;
 			
-			std::tie(m_blocks3, m_blocks4) = allocate(m_blocks3, m_blocks4);
-
-			vector_iterator it;
-			
-			#pragma omp for
-			for(it = val.begin(); it < val.end(); it++)
+			for(int i = 0; i < num_blocks; i++)
 			{
-				//std::cout << "Inserting for";
-				m_cur_el = push(*it, m_blocks3, m_blocks4, m_cur_el);
+				for(size_t j; j < block_type::size; j++)
+				{
+					m_blocks1[local_m_cur_el / block_type::size][local_m_cur_el % block_type::size] = blocks_per_thread[thread_id][i][j];
+					++local_m_cur_el;
+				}
+				
 			}
-			//std::cout << "Finished for" << std::endl;
-			
-			#pragma omp critical
-			{
-		        //std::cout << "Entering cirtical compute_results" << std::endl;
-				// fill the rest of the last block of every thread with max values
-		        compute_result(m_blocks3, m_cur_el);
-			}
-			#pragma omp barrier
-			//std::cout << "Deallocate blocks" << std::endl;
-			deallocate(m_blocks3, m_blocks4);
+			m_max_el.fetch_add(block_cur_el[thread_id], std::memory_order_acq_rel);
 		}
-		//std::cout << "Set m_result_computed to true" << std::endl;
-		m_result_computed = true;
+		else
+		{
+			std::cout << "Write to memory thread: " << thread_id << std::endl;
+			internal_size_type local_m_max_el = m_max_el.load();
+			#pragma omp single
+			{
+				if(local_m_max_el == m_el_in_run)
+				{
+					write_to_memory();
+				}
+			}
+			//typename std::vector<std::vector<block_type*>>::const_iterator it;
+			local_m_cur_el = m_cur_el.fetch_add(block_cur_el[thread_id], std::memory_order_acq_rel);
+			for(int i = 0; i < num_blocks; i++)
+			{
+				for(size_t j; j < block_type::size; j++)
+				{
+					m_blocks1[local_m_cur_el / block_type::size][local_m_cur_el % block_type::size] = blocks_per_thread[thread_id][i][j];
+					++local_m_cur_el;
+				}
+				
+			}
+			m_max_el.fetch_add(block_cur_el[thread_id], std::memory_order_acq_rel);
+		}
+	}
+	
+	void parallel_push(const value_type& val, int thread_id)
+	{
+
+		if (LIKELY(block_cur_el[thread_id] < m_el_in_block))
+		{
+			blocks_per_thread[thread_id][block_cur_el[thread_id] / block_type::size][block_cur_el[thread_id] % block_type::size] = val;
+			++block_cur_el[thread_id];
+        }
+		else
+		{
+			write_block_to_run(thread_id);
+			block_cur_el[thread_id] = 0;
+			parallel_push(val, thread_id);
+		}
+		
 	}
 
 
@@ -725,7 +780,7 @@ public:
         if (!m_result_computed)
         {	
 			//std::cout << "Test if in result" << std::endl;
-            compute_result(m_blocks1, m_cur_el);
+            compute_result();
             m_result_computed = true;
 #ifdef STXXL_PRINT_STAT_AFTER_RF
             STXXL_MSG(*stats::get_instance());
@@ -1719,5 +1774,5 @@ void sort(RandomAccessIterator begin,
 
 STXXL_END_NAMESPACE
 
-#endif // !STXXL_STREAM_SORT_STREAM_PARALLEL_SYNCHRON_HEADER
+#endif // !STXXL_STREAM_SORT_STREAM_PARALLEL_ASYNCHRON_HEADER
 // vim: et:ts=4:sw=4

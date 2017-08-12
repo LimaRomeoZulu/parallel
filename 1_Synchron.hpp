@@ -26,8 +26,8 @@ struct my_comparator1
 template<typename CINT>
 class SynchronSorter {
 public:
-	SynchronSorter():quartetSorter(my_comparator1<CINT>(),static_cast<size_t>(1)<<30){};
-	std::vector<CINT> computeSorting(std::vector<CINT> numbers);
+	SynchronSorter():quartetSorter(my_comparator1<CINT>(),static_cast<size_t>(1)<<30, 1){};
+	std::vector<CINT> computeSorting();
 private:
 	stxxl::parallel_sorter_synchron<CINT, my_comparator1<CINT> > quartetSorter;
 	std::vector<CINT> result;
@@ -35,13 +35,16 @@ private:
 };
 
 template<typename CINT>
-std::vector<CINT> SynchronSorter<CINT>::computeSorting(std::vector<CINT> numbers) {
+std::vector<CINT> SynchronSorter<CINT>::computeSorting() {
 	
 	std::vector<CINT> result;
 	
 	std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 		
-		quartetSorter.push_bulk(numbers);
+	for(size_t i = static_cast<size_t>(1)<<28; i>0; i--)
+	{
+		quartetSorter.push(i);
+	}
 			
 	std::chrono::steady_clock::time_point insert = std::chrono::steady_clock::now();
 	
