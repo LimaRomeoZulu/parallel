@@ -487,7 +487,7 @@ private:
     //! run object containing block ids of the run being written to disk
     run_type run;
 	
-	std::chrono::steady_clock::time_point end_writing;
+	std::chrono::steady_clock::time_point begin_insertion;
 	
 	
 	std::vector<block_type*> blocks_per_thread;
@@ -673,6 +673,7 @@ public:
 	
 	void write_to_memory()
 	{
+		std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
         assert(m_el_in_run == m_max_el);
 
         // sort and store m_blocks1
@@ -698,8 +699,12 @@ public:
 
         std::swap(m_blocks1, m_blocks2);
 
-	m_max_el.store(0);
+		m_max_el.store(0);
         m_cur_el.store(0);
+		std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+		
+		std::cout << "Writing took: " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()
+					<< " microseconds." << std::endl;
     }
 	
 	void write_block_to_run(int thread_id)
@@ -727,10 +732,13 @@ public:
 		}
 		else
 		{
-			std::cout << "Write to memory thread: " << thread_id << std::endl;
-			//internal_size_type local_m_max_el = m_max_el.load();
+			
+			//std::cout << "Write to memory thread: " << thread_id << std::endl;
 			#pragma omp single
 			{
+				std::chrono::steady_clock::time_point end_insertion = std::chrono::steady_clock::now();
+				std::cout << "Inserting took: " << std::chrono::duration_cast<std::chrono::microseconds>(end_insertion - begin_insertion).count()
+							<< " microseconds." << std::endl;
 				
 				if(m_max_el == m_el_in_run)
 				{
@@ -746,6 +754,7 @@ public:
 					assert(m_max_el == m_el_in_run);
 					write_to_memory();
 				}
+				begin_insertion = std::chrono::steady_clock::now();
 			}
 			//typename std::vector<std::vector<block_type*>>::const_iterator it;
 			local_m_cur_el = m_cur_el.fetch_add(block_cur_el[thread_id], std::memory_order_acq_rel);
