@@ -496,6 +496,10 @@ private:
 	
 	int num_threads;
 	
+	std::mutex m;
+	
+	std::condition_variable cv;
+	
 
 protected:
     //!  fill the rest of the block with max values
@@ -715,18 +719,25 @@ public:
 				++local_m_cur_el;
 				
 			}
+			std::unique_lock<std::mutex> lk(m);
 			m_max_el.fetch_add(block_cur_el[thread_id], std::memory_order_acq_rel);
+			lk.unlock();
+			cv.notify_one();
+			
 		}
 		else
 		{
 			std::cout << "Write to memory thread: " << thread_id << std::endl;
-			internal_size_type local_m_max_el = m_max_el.load();
+			//internal_size_type local_m_max_el = m_max_el.load();
 			#pragma omp single
 			{
-				if(local_m_max_el == m_el_in_run)
+				while(m_max_el != m_el_in_run)
 				{
-					write_to_memory();
+					std::unique_lock<std::mutex> lk(m);
+					cv.wait(lk);
 				}
+				assert(m_max_el == m_el_in_run);
+				write_to_memory();
 			}
 			//typename std::vector<std::vector<block_type*>>::const_iterator it;
 			local_m_cur_el = m_cur_el.fetch_add(block_cur_el[thread_id], std::memory_order_acq_rel);
