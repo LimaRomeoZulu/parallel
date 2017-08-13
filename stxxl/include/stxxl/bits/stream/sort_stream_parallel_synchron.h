@@ -674,8 +674,6 @@ public:
 	void write_to_memory()
 	{
         assert(m_el_in_run == m_max_el);
-        m_cur_el.store(0);
-		m_max_el.store(0);
 
         // sort and store m_blocks1
         sort_run(m_blocks1, m_el_in_run);
@@ -700,6 +698,8 @@ public:
 
         std::swap(m_blocks1, m_blocks2);
 
+	m_max_el.store(0);
+        m_cur_el.store(0);
     }
 	
 	void write_block_to_run(int thread_id)
@@ -707,8 +707,8 @@ public:
 		internal_size_type local_m_cur_el = m_cur_el.fetch_add(block_cur_el[thread_id], std::memory_order_acq_rel);
 		if(local_m_cur_el < m_el_in_run)
 		{
-			std::cout << "local_m_cur_el < m_el_in_run thread: " << thread_id << std::endl;
-			std::cout << "block_cur_el[thread_id] " << block_cur_el[thread_id] << std::endl;
+			//std::cout << "local_m_cur_el < m_el_in_run thread: " << thread_id << std::endl;
+			//std::cout << "block_cur_el[thread_id] " << block_cur_el[thread_id] << std::endl;
 			//typename std::vector<std::vector<block_type*>>::const_iterator it;
 			
 			for(internal_size_type i = 0; i < block_cur_el[thread_id]; i++)
@@ -731,13 +731,21 @@ public:
 			//internal_size_type local_m_max_el = m_max_el.load();
 			#pragma omp single
 			{
-				while(m_max_el != m_el_in_run)
+				
+				if(m_max_el == m_el_in_run)
 				{
-					std::unique_lock<std::mutex> lk(m);
-					cv.wait(lk);
+					write_to_memory();
 				}
-				assert(m_max_el == m_el_in_run);
-				write_to_memory();
+				else
+				{
+					while(m_max_el != m_el_in_run)
+					{
+						std::unique_lock<std::mutex> lk(m);
+						cv.wait(lk);
+					}
+					assert(m_max_el == m_el_in_run);
+					write_to_memory();
+				}
 			}
 			//typename std::vector<std::vector<block_type*>>::const_iterator it;
 			local_m_cur_el = m_cur_el.fetch_add(block_cur_el[thread_id], std::memory_order_acq_rel);

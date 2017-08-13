@@ -70,8 +70,8 @@ int main(int argc, char** argv)
     int nlines = 0;
 	
 	// Prepare outputfile
-	//std::ofstream outputfile;
-	//std::ofstream measures;
+	std::ofstream outputfile;
+	std::ofstream measures;
 	std::vector<size_t> final_result(nlines);
 	
 	int option;
