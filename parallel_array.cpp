@@ -11,18 +11,16 @@
 
 int main(int argc, char* argv[])
 {
-	size_t size;
-	int nthreads;
-	
-	std::stringstream(argv[1]) >> nthreads;
-	std::stringstream(argv[2]) >> size;
+	size_t size = 10000;
+	size_t nthreads = 4;
+
 	size_t array_1 [size] = {};
 	size_t size_array2 = ceil(size/nthreads);
 	size_t array_2 [nthreads][size_array2];
 	
 	//----------------Single thread single array------------------------------
 	std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
-    for(int i=0; i<size; i++){ 
+    for(size_t i=0; i<size; i++){ 
         ++array_1[i];
  	}
 	std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
@@ -35,7 +33,7 @@ int main(int argc, char* argv[])
 #pragma omp parallel num_threads(nthreads)
 	{
 #pragma omp for
-		for(int i=0; i<size; i++){ 
+		for(size_t i=0; i<size; i++){ 
 	        ++array_1[i];
 	 	}
 	}
@@ -48,7 +46,7 @@ int main(int argc, char* argv[])
 #pragma omp parallel num_threads(nthreads)
 	{
 	int j = omp_get_thread_num();	
-		for(int i=0; i<size_array2; i++){ 
+		for(size_t i=0; i<size_array2; i++){ 
 	        ++array_2[j][i];
 	 	}
 	}
@@ -61,7 +59,7 @@ int main(int argc, char* argv[])
 #pragma omp parallel num_threads(nthreads)
 	{
 	size_t array_3[size_array2] = {};
-		for(int i=0; i<size_array2; i++){ 
+		for(size_t i=0; i<size_array2; i++){ 
 	        ++array_3[i];
 	 	}
 	}
