@@ -12,8 +12,7 @@
 int main(int argc, char* argv[])
 {
 	size_t size = 100000;
-	int  nthreads;
-	std::stringstream(argv[1])>>nthreads;
+	int  nthreads = 8;
 
 	size_t array_1 [size] = {};
 	size_t size_array2 = ceil(size/nthreads);
@@ -21,7 +20,7 @@ int main(int argc, char* argv[])
 	size_t array_2 [nthreads][size_array2];
 
 	std::ofstream measures;
-	measures.open("../0_measures_" + std::string(argv[1]), std::ios_base::app);
+	measures.open("../0_measures_8", std::ios_base::app);
 
 	for(int i = 0; i< 100; i++){
 
