@@ -722,12 +722,11 @@ public:
 		internal_size_type local_m_cur_el = m_cur_el.fetch_add(block_cur_el[thread_id], std::memory_order_acq_rel);
 		if(local_m_cur_el < m_el_in_run)
 		{
-			std::cout << "local_m_cur_el" << local_m_cur_el << std::endl;
-			std::cout << "block_cur_el[thread_id] " << block_cur_el[thread_id] << std::endl;
+			//std::cout << "local_m_cur_el " << local_m_cur_el << std::endl;
+			//std::cout << "block_cur_el[thread_id] " << block_cur_el[thread_id] << std::endl;
 			
 			for(internal_size_type i = 0; i < block_cur_el[thread_id]; i++)
 			{
-				std::cout << "write_block_to_run blocks_per_thread: " << blocks_per_thread[thread_id][i/ block_type::size][i % block_type::size] << std::endl;
 				m_blocks1[local_m_cur_el / block_type::size][local_m_cur_el % block_type::size] = blocks_per_thread[thread_id][i/ block_type::size][i % block_type::size];
 				//std::cout << "mblocks1: " << m_blocks1[local_m_cur_el / block_type::size][local_m_cur_el % block_type::size]<< std::endl;
 				++local_m_cur_el;
@@ -742,7 +741,7 @@ public:
 		{
 			
 			std::cout << "Write to memory thread: " << thread_id << std::endl;
-			if(flag_writing.test_and_set(std::memory_order_acquire))
+			if(!flag_writing.test_and_set(std::memory_order_acquire))
 			{
 				std::chrono::steady_clock::time_point end_insertion = std::chrono::steady_clock::now();
 				std::cout << "Inserting took: " << std::chrono::duration_cast<std::chrono::microseconds>(end_insertion - begin_insertion).count()
@@ -755,7 +754,7 @@ public:
 				else
 				{	
 					std::unique_lock<std::mutex> lk_full_run(m_full_run);
-					cv_full_run.wait(lk_full_run, [&]{return m_max_el != m_el_in_run;});
+					cv_full_run.wait(lk_full_run, [&]{return m_max_el == m_el_in_run;});
 					
 					assert(m_max_el == m_el_in_run);
 					write_to_memory();
@@ -785,16 +784,13 @@ public:
 		}
 	}
 	
-	void parallel_push(const value_type& val, int thread_id)
+	void parallel_push(const value_type& val, const int thread_id)
 	{
-
-		if (LIKELY(block_cur_el[thread_id] < m_el_in_block))
+		const internal_size_type cur_el = block_cur_el[thread_id];
+		if (LIKELY(cur_el < m_el_in_block))
 		{
-			blocks_per_thread[thread_id][block_cur_el[thread_id] / block_type::size][block_cur_el[thread_id] % block_type::size] = val;
-			//std::cout << "In parallel push" << blocks_per_thread[thread_id][block_cur_el[thread_id] / block_type::size][block_cur_el[thread_id] % block_type::size] << std::endl;
+			blocks_per_thread[thread_id][cur_el / block_type::size][cur_el % block_type::size] = val;
 			++block_cur_el[thread_id];
-			//std::cout << "Thread_id " << thread_id << std::endl;
-			//std::cout << "Push: block_cur_el[thread_id] " << block_cur_el[thread_id] << std::endl;
         }
 		else
 		{
