@@ -45,7 +45,7 @@ std::vector<CINT> SynchronSorter<CINT>::computeSorting() {
 	#pragma omp parallel num_threads(nthread)
 	{		
 		#pragma omp for 
-		for(size_t i = static_cast<size_t>(1)<<25; i>0; i--)
+		for(size_t i = static_cast<size_t>(1)<<28; i>0; i--)
 		{
 			quartetSorter.push(i, omp_get_thread_num());
 		}
