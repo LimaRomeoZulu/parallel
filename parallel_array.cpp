@@ -12,7 +12,7 @@
 int main(int argc, char* argv[])
 {
 	size_t size = 10000;
-	size_t nthreads = 4;
+	size_t nthreads = 8;
 
 	size_t array_1 [size] = {};
 	size_t size_array2 = ceil(size/nthreads);
