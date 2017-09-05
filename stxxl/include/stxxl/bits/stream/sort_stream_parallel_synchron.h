@@ -719,13 +719,14 @@ public:
 	
 	void write_block_to_run(int thread_id)
 	{
-		internal_size_type local_m_cur_el = m_cur_el.fetch_add(block_cur_el[thread_id], std::memory_order_acq_rel);
+		const internal_size_type cur_el = block_cur_el[thread_id];
+		internal_size_type local_m_cur_el = m_cur_el.fetch_add(cur_el, std::memory_order_acq_rel);
 		if(local_m_cur_el < m_el_in_run)
 		{
 			//std::cout << "local_m_cur_el " << local_m_cur_el << std::endl;
 			//std::cout << "block_cur_el[thread_id] " << block_cur_el[thread_id] << std::endl;
 			
-			for(internal_size_type i = 0; i < block_cur_el[thread_id]; i++)
+			for(internal_size_type i = 0; i < cur_el; i++)
 			{
 				m_blocks1[local_m_cur_el / block_type::size][local_m_cur_el % block_type::size] = blocks_per_thread[thread_id][i/ block_type::size][i % block_type::size];
 				//std::cout << "mblocks1: " << m_blocks1[local_m_cur_el / block_type::size][local_m_cur_el % block_type::size]<< std::endl;
@@ -733,7 +734,7 @@ public:
 				
 			}
 			std::lock_guard<std::mutex> lk_full_run(m_full_run);
-			m_max_el.fetch_add(block_cur_el[thread_id], std::memory_order_acq_rel);
+			m_max_el.fetch_add(cur_el, std::memory_order_acq_rel);
 			cv_full_run.notify_one();
 			
 		}
@@ -772,13 +773,13 @@ public:
 				cv_finish_writing.wait(lk_finish_writing);
 				std::cout << "finish waiting" <<std::endl;
 
-				local_m_cur_el = m_cur_el.fetch_add(block_cur_el[thread_id], std::memory_order_acq_rel);
-				for(size_t i = 0; i < block_cur_el[thread_id]; i++)
+				local_m_cur_el = m_cur_el.fetch_add(cur_el, std::memory_order_acq_rel);
+				for(size_t i = 0; i < cur_el; i++)
 				{
 					m_blocks1[local_m_cur_el / block_type::size][local_m_cur_el % block_type::size] = blocks_per_thread[thread_id][i/ block_type::size][i % block_type::size];
 					++local_m_cur_el;	
 				}
-				m_max_el.fetch_add(block_cur_el[thread_id], std::memory_order_acq_rel);
+				m_max_el.fetch_add(cur_el, std::memory_order_acq_rel);
 			}
 			
 		}
