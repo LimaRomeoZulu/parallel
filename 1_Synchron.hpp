@@ -44,10 +44,11 @@ std::vector<CINT> SynchronSorter<CINT>::computeSorting() {
 	std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 	#pragma omp parallel num_threads(nthread)
 	{		
+		const int tid = omp_get_thread_num();
 		#pragma omp for 
 		for(size_t i = static_cast<size_t>(1)<<28; i>0; i--)
 		{
-			quartetSorter.push(i, omp_get_thread_num());
+			quartetSorter.push(i, tid);
 		}
 	}		
 	std::chrono::steady_clock::time_point insert = std::chrono::steady_clock::now();
