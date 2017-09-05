@@ -489,17 +489,22 @@ private:
 	
 	std::chrono::steady_clock::time_point begin_insertion;
 	
-	
 	std::vector<block_type*> blocks_per_thread;
 	
 	int num_blocks;
 	
 	int num_threads;
 	
-	std::mutex m;
+	std::mutex m_full_run;
 	
-	std::condition_variable cv;
+	std::mutex m_finish_writing;
 	
+	std::condition_variable cv_full_run;
+	
+	std::condition_variable cv_finish_writing;
+	
+	std::atomic_flag flag_writing = ATOMIC_FLAG_INIT;
+
 
 protected:
     //!  fill the rest of the block with max values
@@ -601,8 +606,8 @@ public:
         allocate();
 		num_threads = nthreads;
 		num_blocks = nblocks;
-		//0 is never used
-		for(int i=0; i < num_threads; i++)
+
+		for(int i=0; i < num_threads; i++) //TODO move to allocate()
 		{
 			block_type* tmp_block = new block_type[num_blocks];
 			blocks_per_thread.push_back(tmp_block);
@@ -624,6 +629,11 @@ public:
     {
         m_result_computed = 1;
         deallocate();
+		for(int i=0; i < num_threads; i++) //TODO move to deallocate()
+		{
+			delete[] blocks_per_thread[i];
+			blocks_per_thread[i] = NULL;
+		}
     }
 
     //! Clear current state and remove all items.
@@ -712,29 +722,27 @@ public:
 		internal_size_type local_m_cur_el = m_cur_el.fetch_add(block_cur_el[thread_id], std::memory_order_acq_rel);
 		if(local_m_cur_el < m_el_in_run)
 		{
-			//std::cout << "local_m_cur_el < m_el_in_run thread: " << thread_id << std::endl;
-			//std::cout << "block_cur_el[thread_id] " << block_cur_el[thread_id] << std::endl;
-			//typename std::vector<std::vector<block_type*>>::const_iterator it;
+			std::cout << "local_m_cur_el" << local_m_cur_el << std::endl;
+			std::cout << "block_cur_el[thread_id] " << block_cur_el[thread_id] << std::endl;
 			
 			for(internal_size_type i = 0; i < block_cur_el[thread_id]; i++)
 			{
-				//std::cout << "write_block_to_run blocks_per_thread: " << blocks_per_thread[thread_id][i/ block_type::size][i % block_type::size] << std::endl;
+				std::cout << "write_block_to_run blocks_per_thread: " << blocks_per_thread[thread_id][i/ block_type::size][i % block_type::size] << std::endl;
 				m_blocks1[local_m_cur_el / block_type::size][local_m_cur_el % block_type::size] = blocks_per_thread[thread_id][i/ block_type::size][i % block_type::size];
 				//std::cout << "mblocks1: " << m_blocks1[local_m_cur_el / block_type::size][local_m_cur_el % block_type::size]<< std::endl;
 				++local_m_cur_el;
 				
 			}
-			std::unique_lock<std::mutex> lk(m);
+			std::lock_guard<std::mutex> lk_full_run(m_full_run);
 			m_max_el.fetch_add(block_cur_el[thread_id], std::memory_order_acq_rel);
-			lk.unlock();
-			cv.notify_one();
+			cv_full_run.notify_one();
 			
 		}
 		else
 		{
 			
-			//std::cout << "Write to memory thread: " << thread_id << std::endl;
-			#pragma omp single
+			std::cout << "Write to memory thread: " << thread_id << std::endl;
+			if(flag_writing.test_and_set(std::memory_order_acquire))
 			{
 				std::chrono::steady_clock::time_point end_insertion = std::chrono::steady_clock::now();
 				std::cout << "Inserting took: " << std::chrono::duration_cast<std::chrono::microseconds>(end_insertion - begin_insertion).count()
@@ -745,26 +753,35 @@ public:
 					write_to_memory();
 				}
 				else
-				{
-					while(m_max_el != m_el_in_run)
-					{
-						std::unique_lock<std::mutex> lk(m);
-						cv.wait(lk);
-					}
+				{	
+					std::unique_lock<std::mutex> lk_full_run(m_full_run);
+					cv_full_run.wait(lk_full_run, [&]{return m_max_el != m_el_in_run;});
+					
 					assert(m_max_el == m_el_in_run);
 					write_to_memory();
 				}
 				begin_insertion = std::chrono::steady_clock::now();
-			}
-			//typename std::vector<std::vector<block_type*>>::const_iterator it;
-			local_m_cur_el = m_cur_el.fetch_add(block_cur_el[thread_id], std::memory_order_acq_rel);
-			for(size_t i = 0; i < block_cur_el[thread_id]; i++)
-			{
-				m_blocks1[local_m_cur_el / block_type::size][local_m_cur_el % block_type::size] = blocks_per_thread[thread_id][i/ block_type::size][i % block_type::size];
-				++local_m_cur_el;
+				flag_writing.clear(std::memory_order_release); 
 				
+				std::lock_guard<std::mutex> lk_finish_writing(m_finish_writing);
+				cv_finish_writing.notify_all();
 			}
-			m_max_el.fetch_add(block_cur_el[thread_id], std::memory_order_acq_rel);
+			else{
+
+				std::cout << "start waiting" <<std::endl;
+				std::unique_lock<std::mutex> lk_finish_writing(m_finish_writing);
+				cv_finish_writing.wait(lk_finish_writing);
+				std::cout << "finish waiting" <<std::endl;
+
+				local_m_cur_el = m_cur_el.fetch_add(block_cur_el[thread_id], std::memory_order_acq_rel);
+				for(size_t i = 0; i < block_cur_el[thread_id]; i++)
+				{
+					m_blocks1[local_m_cur_el / block_type::size][local_m_cur_el % block_type::size] = blocks_per_thread[thread_id][i/ block_type::size][i % block_type::size];
+					++local_m_cur_el;	
+				}
+				m_max_el.fetch_add(block_cur_el[thread_id], std::memory_order_acq_rel);
+			}
+			
 		}
 	}
 	
